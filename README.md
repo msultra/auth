@@ -16,4 +16,4 @@
 
 ---
 
-Auth is a library that implements authentication methods for Windows. SPNEGO, with embedded providers. For more information about SPNEGO, see the [RFC 4174](https://www.rfc-editor.org/rfc/rfc4174.html). Note that Microsoft has extended the SPNEGO protocol with a useless extension called NegTokenInit2. Have fun!
+Auth is a library that implements authentication methods for Windows. SPNEGO, with embedded providers. For more information about SPNEGO, see the [RFC 4178](https://www.rfc-editor.org/rfc/rfc4178.html). Note that Microsoft has extended the SPNEGO protocol with a useless extension called NegTokenInit2. Have fun!
