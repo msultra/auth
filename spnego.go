@@ -53,13 +53,13 @@ type NegTokenInit2 struct {
 }
 
 func EncodeNegTokenInitGeneric(token interface{}) ([]byte, error) {
-	type inintailCtxToken struct { // `asn1:"application,tag:0"`
+	type initialCtxToken struct { // `asn1:"application,tag:0"`
 		ThisMech asn1.ObjectIdentifier `asn1:"optional"`
 		Init     []interface{}         `asn1:"optional,explict,tag:0"`
 		Resp     []NegTokenResp        `asn1:"optional,explict,tag:1"`
 	}
 
-	bs, err := asn1.Marshal(inintailCtxToken{
+	bs, err := asn1.Marshal(initialCtxToken{
 		ThisMech: SpnegoOID,
 		Init:     []interface{}{token},
 	})
