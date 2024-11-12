@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/msultra/auth"
+	"github.com/msultra/auth/initiators/ntlm"
 )
 
 func TestEncodeNegTokenInit(t *testing.T) {
@@ -16,7 +17,7 @@ func TestEncodeNegTokenInit(t *testing.T) {
 		Expected string
 	}{
 		{
-			[]asn1.ObjectIdentifier{auth.NtlmOID},
+			[]asn1.ObjectIdentifier{ntlm.NtlmOID},
 			"4e544c4d5353500001000000978208e2000000000000000000000000000000000a005a290000000f",
 			"604806062b0601050502a03e303ca00e300c060a2b06010401823702020aa22a04284e544c4d5353500001000000978208e2000000000000000000000000000000000a005a290000000f",
 		},

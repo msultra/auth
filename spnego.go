@@ -12,7 +12,6 @@ var SpnegoOID = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 2}
 
 // Built-in authentication mechanism OIDs
 var (
-	NtlmOID       = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 2, 10}
 	MsKerberosOid = asn1.ObjectIdentifier{1, 2, 840, 48018, 1, 2, 2}
 	KerberosOID   = asn1.ObjectIdentifier{1, 2, 840, 113554, 1, 2, 2}
 	NegotiateOID  = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 2, 30}
