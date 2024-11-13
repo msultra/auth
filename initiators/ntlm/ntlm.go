@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/rc4"
 	"encoding/asn1"
 	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"strings"
+	"time"
+
+	"golang.org/x/crypto/md4"
 )
 
 var (
@@ -63,288 +68,276 @@ const (
 	MessageTypeNtLmAuthenticate = 0x00000003
 )
 
-type NtlmInitiator struct {
-	User        string
-	Password    string
-	Hash        []byte
-	Domain      string
-	Workstation string
-	TargetSPN   string
+func signKey(key []byte, magicConstant []byte, negotiateFlags uint32) ([]byte, error) {
+	if negotiateFlags&NegotiateExtendedSecurity == 0 {
+		return []byte{}, nil
+	}
 
-	// Session Tracking
-	NegotiateFlags     uint32
-	SessionBaseKey     []byte
-	KeyExchangeKey     []byte
-	RandomSessionKey   []byte
-	ExportedSessionKey []byte
-	ClientSigningKey   []byte
-	ServerSigningKey   []byte
-	ClientHandle       *rc4.Cipher
-	ServerHandle       *rc4.Cipher
-
-	// Challenges
-	ServerChallenge []byte
-	ClientChallenge []byte
-
-	// Tracking
-	NegotiateMessage    []byte
-	AuthenticateMessage []byte
-
-	// Don't use unless you know what you're doing
-	TargetInfo *TargetInformation
-	sessionKey []byte
+	h := md5.New()
+	if _, err := h.Write(key); err != nil {
+		return nil, err
+	}
+	if _, err := h.Write(magicConstant); err != nil {
+		return nil, err
+	}
+	return h.Sum(nil), nil
 }
 
-// GetOID returns the NTLM mechanism OID
-func (n *NtlmInitiator) GetOID() asn1.ObjectIdentifier {
-	return NtlmOID
+func sealKey(key []byte, magicConstant []byte, negotiateFlags uint32) ([]byte, error) {
+	switch {
+	case negotiateFlags&NegotiateExtendedSecurity != 0:
+		hSeal := md5.New()
+		switch {
+		case negotiateFlags&Negotiate128 != 0:
+			hSeal.Write(key[:16])
+		case negotiateFlags&Negotiate56 != 0:
+			hSeal.Write(key[:7])
+		default:
+			hSeal.Write(key[:5])
+		}
+
+		if _, err := hSeal.Write(magicConstant); err != nil {
+			return nil, err
+		}
+		return hSeal.Sum(nil), nil
+	case negotiateFlags&NegotiateLMKey != 0:
+		sealingKey := make([]byte, 8)
+		if negotiateFlags&Negotiate56 != 0 {
+			copy(sealingKey, key[:7])
+			sealingKey[7] = 0xa0
+		} else {
+			copy(sealingKey, key[:5])
+			sealingKey[5] = 0xe5
+			sealingKey[6] = 0x38
+			sealingKey[7] = 0xb0
+		}
+		return sealingKey, nil
+	}
+	return key, nil
 }
 
-// InitSecContext generates the initial NTLM Type 1 message
-func (n *NtlmInitiator) InitSecContext() ([]byte, error) {
-	//        NegotiateMessage
-	//   0-8: Signature
-	//  8-12: MessageType
-	// 12-16: NegotiateFlags
-	// 16-24: DomainNameFields
-	// 24-32: WorkstationFields
-	// 32-40: Version
-	//   40-: Payload
-	var flags uint32
-	if n.NegotiateFlags == 0 {
-		flags = Negotiate56 | Negotiate128 | NegotiateKeyExch | NegotiateTargetInfo |
-			NegotiateExtendedSecurity | NegotiateAlwaysSign | NegotiateNTLM | NegotiateSign |
-			RequestTarget | NegotiateUnicode | NegotiateVersion
+func sign(dst []byte, negotiateFlags uint32, handle *rc4.Cipher, signingKey []byte, seqNum uint32, msg []byte) ([]byte, uint32) {
+	ret, tag := sliceForAppend(dst, 16)
+	if negotiateFlags&NegotiateExtendedSecurity == 0 {
+		//        NtlmsspMessageSignature
+		//   0-4: Version
+		//   4-8: RandomPad
+		//  8-12: Checksum
+		// 12-16: SeqNum
+		binary.LittleEndian.PutUint32(tag[:4], 1)
+		binary.LittleEndian.PutUint32(tag[8:12], crc32.ChecksumIEEE(msg))
+		handle.XORKeyStream(tag[4:8], tag[4:8])
+		handle.XORKeyStream(tag[8:12], tag[8:12])
+		handle.XORKeyStream(tag[12:16], tag[12:16])
+		tag[12] ^= byte(seqNum)
+		tag[13] ^= byte(seqNum >> 8)
+		tag[14] ^= byte(seqNum >> 16)
+		tag[15] ^= byte(seqNum >> 24)
+		if negotiateFlags&NegotiateDatagram == 0 {
+			seqNum++
+		}
+		tag[4] = 0
+		tag[5] = 0
+		tag[6] = 0
+		tag[7] = 0
 	} else {
-		flags = n.NegotiateFlags
+		//        NtlmsspMessageSignatureExt
+		//   0-4: Version
+		//  4-12: Checksum
+		// 12-16: SeqNum
+
+		//   0-4: Version
+		binary.LittleEndian.PutUint32(tag[:4], 1)
+
+		// 12-16: SeqNum
+		binary.LittleEndian.PutUint32(tag[12:16], seqNum)
+
+		h := hmac.New(md5.New, signingKey)
+		h.Write(tag[12:16])
+		h.Write(msg)
+		copy(tag[4:12], h.Sum(nil))
+		if negotiateFlags&NegotiateKeyExch != 0 {
+			handle.XORKeyStream(tag[4:12], tag[4:12])
+		}
+		seqNum++
 	}
-
-	// NegotiateMessage
-	payload := make([]byte, 40)
-
-	// 0-8: Signature
-	copy(payload, Signature)
-
-	// 8-12: MessageType
-	binary.LittleEndian.PutUint32(payload[8:12], MessageTypeNtLmNegotiate)
-
-	// 12-16: NegotiateFlags
-	if n.Domain != "" {
-		flags |= NegotiateDomainSupplied
-	}
-	if n.Workstation != "" {
-		flags |= NegotiateWorkstationSupplied
-	}
-	n.NegotiateFlags = flags
-	binary.LittleEndian.PutUint32(payload[12:16], uint32(flags))
-
-	// 16-24: DomainNameFields
-	expectedLen := 40
-	toAppend := []byte{}
-	if n.Domain != "" {
-		uniStr := toUnicode(n.Domain)
-		toAppend = append(toAppend, uniStr...)
-
-		binary.LittleEndian.PutUint16(payload[16:18], uint16(len(uniStr)))
-		binary.LittleEndian.PutUint16(payload[18:20], uint16(len(uniStr)))
-		binary.LittleEndian.PutUint32(payload[20:24], uint32(expectedLen))
-		expectedLen += len(uniStr)
-	}
-
-	// 24-32: WorkstationFields
-	if n.Workstation != "" {
-		uniStr := toUnicode(n.Workstation)
-		toAppend = append(toAppend, uniStr...)
-
-		binary.LittleEndian.PutUint16(payload[24:26], uint16(len(uniStr)))
-		binary.LittleEndian.PutUint16(payload[26:28], uint16(len(uniStr)))
-		binary.LittleEndian.PutUint32(payload[28:32], uint32(expectedLen))
-		expectedLen += len(uniStr)
-	}
-
-	// 32-40: Version
-	copy(payload[32:], ClientVersion)
-
-	// 40-: Payload
-	n.NegotiateMessage = append(payload, toAppend...)
-	return n.NegotiateMessage, nil
+	return ret, seqNum
 }
 
-// AcceptSecContext processes the NTLM Type 2 message and generates Type 3 response
-func (n *NtlmInitiator) AcceptSecContext(sc []byte) ([]byte, error) {
-	//        ChallengeMessage
-	//   0-8: Signature
-	//  8-12: MessageType
-	// 12-20: TargetNameFields
-	// 20-24: NegotiateFlags
-	// 24-32: ServerChallenge
-	// 32-40: _
-	// 40-48: TargetInfoFields
-	// 48-56: Version
-	//   56-: Payload
+func (n *NtlmProvider) NewLMChallengeResponse() []byte {
+	//        LMv2Response
+	//  0-16: Response
+	// 16-24: ChallengeFromClient
+	// Empty LMv2ChallengeResponse => unsupported
+	return make([]byte, 24)
+}
 
-	if len(sc) < 48 {
-		return nil, errors.New("invalid challenge message length")
-	}
+func (n *NtlmProvider) NewNtChallengeResponse(target []byte) ([]byte, error) {
+	//        NTLMv2Response
+	//  0-16: Response
+	//   16-: NTLMv2ClientChallenge
 
-	//        ChallengeMessage
-	//        Note that sc is the ChallengeMessage
-
-	//   0-8: Signature
-	if !bytes.Equal(sc[:8], Signature) {
-		return nil, errors.New("invalid signature")
-	}
-
-	//  8-12: MessageType
-	if binary.LittleEndian.Uint32(sc[8:12]) != MessageTypeNtLmChallenge {
-		return nil, errors.New("invalid message type")
-	}
-
-	// 12-20: TargetNameFields
-	targetName, err := extractFields(sc[12:20], sc)
-	if err != nil {
+	// Generate Random Client Challenge
+	var challenge [8]byte
+	if _, err := rand.Read(challenge[:]); err != nil {
 		return nil, err
 	}
 
-	// 20-24: NegotiateFlags
-	challengeFlags := binary.LittleEndian.Uint32(sc[20:24])
-	if n.NegotiateFlags&challengeFlags&RequestTarget == 0 || n.NegotiateFlags&challengeFlags&NegotiateTargetInfo == 0 {
-		return nil, errors.New("invalid negotiate flags")
+	// Generate Hash Function
+	domain := toUnicode(n.Domain)
+	if domain == nil {
+		domain = target
 	}
 
-	// 24-32: ServerChallenge
-	n.ServerChallenge = sc[24:32]
-
-	// 32-40: _
-
-	// 40-48: TargetInfoFields
-	targetInfo, err := extractFields(sc[40:48], sc)
-	if err != nil {
-		return nil, err
-	}
-
-	avpairs, err := NewAvPairs(targetInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	n.TargetInfo, err = NewTargetInformation(avpairs)
-	if err != nil {
-		return nil, err
-	}
-
-	// 48-56: Version
-	// version := sc[48:56]
-
-	//        AuthenticateMessage
-	//   0-8: Signature
-	//  8-12: MessageType
-	// 12-20: LmChallengeResponseFields
-	// 20-28: NtChallengeResponseFields
-	// 28-36: DomainNameFields
-	// 36-44: UserNameFields
-	// 44-52: WorkstationFields
-	// 52-60: EncryptedRandomSessionKeyFields
-	// 60-64: NegotiateFlags
-	// 64-72: Version
-	// 72-88: MIC
-	//   88-: Payload
-	var payload []byte
-
-	offset := 88
-
-	//        AuthenticateMessage
-	authenticateMessage := make([]byte, offset)
-
-	//   0-8: Signature
-	copy(authenticateMessage[0:8], Signature)
-
-	//  8-12: MessageType
-	binary.LittleEndian.PutUint32(authenticateMessage[8:12], MessageTypeNtLmAuthenticate)
-
-	// 12-20: LmChallengeResponseFields
-	//        0-2: len
-	//        2-4: maxlen
-	//        4-8: offset
-	lm := n.NewLMChallengeResponse()
-	binary.LittleEndian.PutUint16(authenticateMessage[12:14], uint16(len(lm)))
-	binary.LittleEndian.PutUint16(authenticateMessage[14:16], uint16(len(lm)))
-	binary.LittleEndian.PutUint32(authenticateMessage[16:20], uint32(offset))
-	payload = append(payload, lm...)
-	offset += len(lm)
-
-	// 20-28: NtChallengeResponseFields
-	nt, err := n.NewNtChallengeResponse(targetName)
-	if err != nil {
-		return nil, err
-	}
-	binary.LittleEndian.PutUint16(authenticateMessage[20:22], uint16(len(nt)))
-	binary.LittleEndian.PutUint16(authenticateMessage[22:24], uint16(len(nt)))
-	binary.LittleEndian.PutUint32(authenticateMessage[24:28], uint32(offset))
-	payload = append(payload, nt...)
-	offset += len(nt)
-
-	// 28-36: DomainNameFields
-	domain := toUnicode(strings.ToUpper(n.Domain))
-	binary.LittleEndian.PutUint16(authenticateMessage[28:30], uint16(len(domain)))
-	binary.LittleEndian.PutUint16(authenticateMessage[30:32], uint16(len(domain)))
-	binary.LittleEndian.PutUint32(authenticateMessage[32:36], uint32(offset))
-	payload = append(payload, domain...)
-	offset += len(domain)
-
-	// 36-44: UserNameFields
 	user := toUnicode(strings.ToUpper(n.User))
-	binary.LittleEndian.PutUint16(authenticateMessage[36:38], uint16(len(user)))
-	binary.LittleEndian.PutUint16(authenticateMessage[38:40], uint16(len(user)))
-	binary.LittleEndian.PutUint32(authenticateMessage[40:44], uint32(offset))
-	payload = append(payload, user...)
-	offset += len(user)
+	if user == nil {
+		// Should be valid for anonymous login
+		// TODO: check if this is correct
+		user = toUnicode("ANONYMOUS")
+	}
 
-	// 44-52: WorkstationFields
-	workstation := toUnicode(strings.ToUpper(n.Workstation))
-	binary.LittleEndian.PutUint16(authenticateMessage[44:46], uint16(len(workstation)))
-	binary.LittleEndian.PutUint16(authenticateMessage[46:48], uint16(len(workstation)))
-	binary.LittleEndian.PutUint32(authenticateMessage[48:52], uint32(offset))
-	payload = append(payload, workstation...)
-	offset += len(workstation)
+	if n.Hash == nil {
+		// Use password
+		password := toUnicode(n.Password)
+		m4 := md4.New()
+		_, err := m4.Write(password)
+		if err != nil {
+			return nil, err
+		}
+		hash := m4.Sum(nil)
+		n.Hash = hash
+	}
 
-	// 52-60: EncryptedRandomSessionKeyFields
-	binary.LittleEndian.PutUint16(authenticateMessage[52:54], uint16(len(n.RandomSessionKey)))
-	binary.LittleEndian.PutUint16(authenticateMessage[54:56], uint16(len(n.RandomSessionKey)))
-	binary.LittleEndian.PutUint32(authenticateMessage[56:60], uint32(offset))
-	payload = append(payload, n.RandomSessionKey...)
-	offset += len(n.RandomSessionKey)
+	hm := hmac.New(md5.New, n.Hash)
+	_, err := hm.Write(user)
+	if err != nil {
+		return nil, err
+	}
+	_, err = hm.Write(domain)
+	if err != nil {
+		return nil, err
+	}
 
-	// 60-64: NegotiateFlags
-	binary.LittleEndian.PutUint32(authenticateMessage[60:64], uint32(n.NegotiateFlags))
+	hashfunction := hmac.New(md5.New, hm.Sum(nil))
+	_, err = hashfunction.Write(n.ServerChallenge)
+	if err != nil {
+		return nil, err
+	}
+	_, err = hashfunction.Write(challenge[:])
+	if err != nil {
+		return nil, err
+	}
 
-	// 64-72: Version
-	copy(authenticateMessage[64:72], ClientVersion)
+	//  0-16: Response
+	response := make([]byte, 16)
+	_ = hashfunction.Sum(response[:])
 
-	// 72-88: MIC
-	// to overwrite later
-	copy(authenticateMessage[72:88], make([]byte, 16))
+	//   16-: NTLMv2ClientChallenge
 
-	// 88-: Payload
-	n.AuthenticateMessage = append(authenticateMessage, payload...)
+	//	      NTLMv2ClientChallenge
+	//	 0-1: RespType
+	//	 1-2: HiRespType
+	//	 2-4: _
+	//	 4-8: _
+	//	8-16: TimeStamp
+	//
+	// 16-24: ChallengeFromClient
+	// 24-28: _
+	//
+	//	 28-: AvPairs
 
-	hash := hmac.New(md5.New, n.ExportedSessionKey)
-	hash.Write(n.NegotiateMessage)
-	hash.Write(n.AuthenticateMessage)
-	copy(n.AuthenticateMessage[72:88], hash.Sum(authenticateMessage[72:88]))
+	//	      NTLMv2ClientChallenge
+	clientChallenge := make([]byte, 28)
 
-	// TODO: before returning, we need to generate the session keys
+	//	 0-1: RespType
+	clientChallenge[0] = 0x01
 
-	return n.AuthenticateMessage, nil
+	//	 1-2: HiRespType
+	clientChallenge[1] = 0x01
+
+	//	 2-4: _
+
+	//	 4-8: _
+
+	//	8-16: TimeStamp
+
+	// if no timestamp provided in AvPairs, provide our own
+	if n.TargetInfo.Timestamp == 0 {
+		n.TargetInfo.Timestamp = uint64((time.Now().UnixNano() / 100) + 116444736000000000)
+	}
+	binary.LittleEndian.PutUint64(clientChallenge[8:16], n.TargetInfo.Timestamp)
+
+	// 16-24: ChallengeFromClient
+	copy(clientChallenge[16:24], challenge[:])
+
+	// 24-28: _
+
+	// 28-: AvPairs
+	clientChallenge = append(clientChallenge, n.TargetInfo.AvPairsBytes...)
+
+	ntlmv2Response := append(response, clientChallenge...)
+
+	// Before returning, we need to generate the session keys
+	hashfunction.Reset()
+	hashfunction.Write(response[:])
+	n.SessionBaseKey = hashfunction.Sum(nil)
+	n.KeyExchangeKey = n.SessionBaseKey
+	n.ExportedSessionKey = make([]byte, 16)
+
+	if n.NegotiateFlags&NegotiateKeyExch == 0 {
+		n.ExportedSessionKey = n.KeyExchangeKey
+		return ntlmv2Response, nil
+	}
+
+	if _, err := rand.Read(n.RandomSessionKey[:]); err != nil {
+		return nil, err
+	}
+
+	cipher, err := rc4.NewCipher(n.KeyExchangeKey)
+	if err != nil {
+		return nil, err
+	}
+	n.RandomSessionKey = make([]byte, 16)
+	cipher.XORKeyStream(n.RandomSessionKey, n.ExportedSessionKey)
+
+	// Return the NTLMv2Response
+	return ntlmv2Response, nil
 }
 
-// GetMIC generates a Message Integrity Code for the given bytes
-func (n *NtlmInitiator) GetMIC(bs []byte) []byte {
-	// Implement NTLM MIC generation
-	return nil
+func (n *NtlmProvider) VerifyMIC(mic, msg []byte, seqNum uint32) (bool, uint32) {
+	expectedMIC, seqNum := sign(nil, n.NegotiateFlags, n.ServerHandle, n.ServerSigningKey, seqNum, msg)
+	return bytes.Equal(mic, expectedMIC), seqNum
 }
 
-// SessionKey returns the established session key
-func (n *NtlmInitiator) SessionKey() []byte {
-	return n.sessionKey
+func (n *NtlmProvider) SealMessage(msg []byte) ([]byte, uint32) {
+	ret, ciphertext := sliceForAppend(nil, len(msg))
+	switch {
+	case n.NegotiateFlags&NegotiateSeal != 0:
+		n.ClientHandle.XORKeyStream(ciphertext[16:], msg)
+		_, n.SequenceNumber = sign(ciphertext[:0], n.NegotiateFlags, n.ClientHandle, n.ClientSigningKey, n.SequenceNumber, msg)
+	case n.NegotiateFlags&NegotiateSign != 0:
+		copy(ciphertext[16:], msg)
+		_, n.SequenceNumber = sign(ciphertext[:0], n.NegotiateFlags, n.ClientHandle, n.ClientSigningKey, n.SequenceNumber, msg)
+	}
+	return ret, n.SequenceNumber
+}
+
+func (n *NtlmProvider) UnsealMessage(msg []byte) ([]byte, uint32, error) {
+	ret, plaintext := sliceForAppend(nil, len(msg))
+	switch {
+	case n.NegotiateFlags&NegotiateSeal != 0:
+		n.ServerHandle.XORKeyStream(plaintext[16:], msg)
+		_, n.SequenceNumber = sign(plaintext[:0], n.NegotiateFlags, n.ServerHandle, n.ServerSigningKey, n.SequenceNumber, msg)
+	case n.NegotiateFlags&NegotiateSign != 0:
+		copy(plaintext[16:], msg)
+		_, n.SequenceNumber = sign(plaintext[:0], n.NegotiateFlags, n.ServerHandle, n.ServerSigningKey, n.SequenceNumber, msg)
+	default:
+		copy(plaintext, msg[16:])
+		for _, s := range msg[:16] {
+			if s != 0x0 {
+				return nil, 0, errors.New("signature mismatch")
+			}
+		}
+	}
+	return ret, n.SequenceNumber, nil
 }

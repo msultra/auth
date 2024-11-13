@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/msultra/auth"
-	"github.com/msultra/auth/providers/ntlm"
+	"github.com/msultra/auth/initiators/ntlm"
 )
 
 func TestEncodeNegTokenInit(t *testing.T) {
