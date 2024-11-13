@@ -22,9 +22,8 @@ Auth is a library that implements authentication methods for Windows. SPNEGO, wi
 
 SPNEGO allows for multiple providers to be used. The following providers are currently supported:
 
-- [NTLM](providers/ntlm/provider.go)
+- [NTLM](initiators/ntlm/ntlm.go)
     - NTLM negotiation.
     - Session encryption and signing.
-    - 
-- [Kerberos](providers/krb/mskrb.go)
+- [Kerberos](initiators/krb/mskrb.go)
     - Supports Kerberos authentication.
