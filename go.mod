@@ -1,4 +1,4 @@
-module github.com/msultra/auth
+module github.com/msultra/spnego
 
 go 1.23.2
 

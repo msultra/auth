@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/msultra/auth"
-	"github.com/msultra/auth/initiators/ntlm"
+	"github.com/msultra/spnego"
+	"github.com/msultra/spnego/initiators/ntlm"
 )
 
 func TestEncodeNegTokenInit(t *testing.T) {
@@ -31,7 +31,7 @@ func TestEncodeNegTokenInit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ret, err := auth.EncodeNegTokenInit(e.Types, tok)
+		ret, err := spnego.EncodeNegTokenInit(e.Types, tok)
 		if err != nil {
 			t.Errorf("%d: %v\n", i, err)
 		}

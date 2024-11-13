@@ -2,7 +2,7 @@
     <br>
     <img style="border-radius: 50%;" src="https://github.com/msultra.png" width="200px" alt="msultra/auth">
     <br>
-    Auth - Part of MsUltra
+    SPNEGO - Part of MsUltra
 </h1>
 
 <h4 align="center">Library that implements authentication methods for Windows. SPNEGO, with embedded providers.</h4>
