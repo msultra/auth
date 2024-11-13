@@ -1,4 +1,4 @@
-package auth_test
+package spnego_test
 
 import (
 	"bytes"

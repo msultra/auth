@@ -1,4 +1,4 @@
-package auth
+package spnego
 
 import (
 	"encoding/asn1"
