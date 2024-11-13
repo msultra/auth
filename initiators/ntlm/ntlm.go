@@ -184,21 +184,21 @@ func (n *NtlmProvider) NewNtChallengeResponse(target []byte) ([]byte, error) {
 	}
 
 	// Generate Hash Function
-	domain := toUnicode(n.Domain)
+	domain := ToUnicode(n.Domain)
 	if domain == nil {
 		domain = target
 	}
 
-	user := toUnicode(strings.ToUpper(n.User))
+	user := ToUnicode(strings.ToUpper(n.User))
 	if user == nil {
 		// Should be valid for anonymous login
 		// TODO: check if this is correct
-		user = toUnicode("ANONYMOUS")
+		user = ToUnicode("ANONYMOUS")
 	}
 
 	if n.Hash == nil {
 		// Use password
-		password := toUnicode(n.Password)
+		password := ToUnicode(n.Password)
 		m4 := md4.New()
 		_, err := m4.Write(password)
 		if err != nil {

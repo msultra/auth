@@ -67,12 +67,12 @@ func (a AvPairs) Bytes() []byte {
 		if k == AvIDMsvAvEOL {
 			continue
 		}
-		binary.LittleEndian.PutUint16(buf[0:2], uint16(k))
-		binary.LittleEndian.PutUint16(buf[2:4], uint16(len(v)))
+		buf = binary.LittleEndian.AppendUint16(buf, uint16(k))
+		buf = binary.LittleEndian.AppendUint16(buf, uint16(len(v)))
 		buf = append(buf, v...)
 	}
-	binary.LittleEndian.PutUint16(buf[0:2], uint16(AvIDMsvAvEOL))
-	binary.LittleEndian.PutUint16(buf[2:4], 0)
+	buf = binary.LittleEndian.AppendUint16(buf, uint16(AvIDMsvAvEOL))
+	buf = binary.LittleEndian.AppendUint16(buf, 0)
 	return buf
 }
 
@@ -183,15 +183,15 @@ func NewTargetInformation(pairs AvPairs) (*TargetInformation, error) {
 func (t *TargetInformation) Set(k AvID, v []byte) (err error) {
 	switch k {
 	case AvIDMsvAvNbComputerName:
-		t.NbComputerName = toString(v)
+		t.NbComputerName = ToString(v)
 	case AvIDMsvAvNbDomainName:
-		t.NbDomainName = toString(v)
+		t.NbDomainName = ToString(v)
 	case AvIDMsvAvDNSComputerName:
-		t.DNSComputerName = toString(v)
+		t.DNSComputerName = ToString(v)
 	case AvIDMsvAvDNSDomainName:
-		t.DNSDomainName = toString(v)
+		t.DNSDomainName = ToString(v)
 	case AvIDMsvAvDNSTreeName:
-		t.DNSTreeName = toString(v)
+		t.DNSTreeName = ToString(v)
 	case AvIDMsvAvFlags:
 		t.Flags = binary.LittleEndian.Uint32(v)
 	case AvIDMsvAvTimestamp:
@@ -199,7 +199,7 @@ func (t *TargetInformation) Set(k AvID, v []byte) (err error) {
 	case AvIDMsvAvSingleHost:
 		t.Host = NewSingleHost(v)
 	case AvIDMsvAvTargetName:
-		t.TargetName = toString(v)
+		t.TargetName = ToString(v)
 	case AvIDMsvChannelBindings:
 		t.ChBindings, err = NewChannelBindings(v)
 	}

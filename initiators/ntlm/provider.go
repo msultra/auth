@@ -138,7 +138,7 @@ func (n *NtlmProvider) InitSecContext() ([]byte, error) {
 	expectedLen := 40
 	toAppend := []byte{}
 	if n.Domain != "" {
-		uniStr := toUnicode(n.Domain)
+		uniStr := ToUnicode(n.Domain)
 		toAppend = append(toAppend, uniStr...)
 
 		binary.LittleEndian.PutUint16(payload[16:18], uint16(len(uniStr)))
@@ -149,7 +149,7 @@ func (n *NtlmProvider) InitSecContext() ([]byte, error) {
 
 	// 24-32: WorkstationFields
 	if n.Workstation != "" {
-		uniStr := toUnicode(n.Workstation)
+		uniStr := ToUnicode(n.Workstation)
 		toAppend = append(toAppend, uniStr...)
 
 		binary.LittleEndian.PutUint16(payload[24:26], uint16(len(uniStr)))
@@ -281,7 +281,7 @@ func (n *NtlmProvider) AcceptSecContext(sc []byte) ([]byte, error) {
 	offset += len(nt)
 
 	// 28-36: DomainNameFields
-	domain := toUnicode(strings.ToUpper(n.Domain))
+	domain := ToUnicode(strings.ToUpper(n.Domain))
 	binary.LittleEndian.PutUint16(authenticateMessage[28:30], uint16(len(domain)))
 	binary.LittleEndian.PutUint16(authenticateMessage[30:32], uint16(len(domain)))
 	binary.LittleEndian.PutUint32(authenticateMessage[32:36], uint32(offset))
@@ -289,7 +289,7 @@ func (n *NtlmProvider) AcceptSecContext(sc []byte) ([]byte, error) {
 	offset += len(domain)
 
 	// 36-44: UserNameFields
-	user := toUnicode(strings.ToUpper(n.User))
+	user := ToUnicode(strings.ToUpper(n.User))
 	binary.LittleEndian.PutUint16(authenticateMessage[36:38], uint16(len(user)))
 	binary.LittleEndian.PutUint16(authenticateMessage[38:40], uint16(len(user)))
 	binary.LittleEndian.PutUint32(authenticateMessage[40:44], uint32(offset))
@@ -297,7 +297,7 @@ func (n *NtlmProvider) AcceptSecContext(sc []byte) ([]byte, error) {
 	offset += len(user)
 
 	// 44-52: WorkstationFields
-	workstation := toUnicode(strings.ToUpper(n.Workstation))
+	workstation := ToUnicode(strings.ToUpper(n.Workstation))
 	binary.LittleEndian.PutUint16(authenticateMessage[44:46], uint16(len(workstation)))
 	binary.LittleEndian.PutUint16(authenticateMessage[46:48], uint16(len(workstation)))
 	binary.LittleEndian.PutUint32(authenticateMessage[48:52], uint32(offset))

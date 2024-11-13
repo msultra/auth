@@ -7,7 +7,7 @@ import (
 	"unicode/utf16"
 )
 
-func toUnicode(s string) []byte {
+func ToUnicode(s string) []byte {
 	// https://github.com/Azure/go-ntlmssp/blob/master/unicode.go
 	uints := utf16.Encode([]rune(s))
 	b := bytes.Buffer{}
@@ -15,7 +15,7 @@ func toUnicode(s string) []byte {
 	return b.Bytes()
 }
 
-func toString(b []byte) string {
+func ToString(b []byte) string {
 	if len(b) == 0 {
 		return ""
 	}
