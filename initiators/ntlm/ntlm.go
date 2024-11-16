@@ -28,7 +28,7 @@ var ClientVersion = []byte{
 }
 
 const (
-	NegotiateUnicode = iota + 1
+	NegotiateUnicode = 1 << iota
 	NegotiateOEM
 	RequestTarget
 	_ // Reserved
