@@ -378,7 +378,7 @@ func (n *NtlmProvider) ValidateChallengeMessage(sc []byte) (err error) {
 
 	// 20-24: NegotiateFlags
 	challengeFlags := binary.LittleEndian.Uint32(sc[20:24])
-	if n.NegotiateFlags&challengeFlags&RequestTarget == 0 || n.NegotiateFlags&challengeFlags&NegotiateTargetInfo == 0 {
+	if challengeFlags&RequestTarget == 0 || challengeFlags&NegotiateTargetInfo == 0 {
 		return errors.New("invalid negotiate flags")
 	}
 
