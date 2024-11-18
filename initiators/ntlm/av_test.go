@@ -3,13 +3,14 @@ package ntlm_test
 import (
 	"testing"
 
+	"github.com/msultra/encoder"
 	"github.com/msultra/spnego/initiators/ntlm"
 )
 
 func TestAvPairs(t *testing.T) {
 	p := make(ntlm.AvPairs)
-	p[ntlm.AvIDMsvAvNbComputerName] = ntlm.ToUnicode("DC01")
-	p[ntlm.AvIDMsvAvNbDomainName] = ntlm.ToUnicode("CONTOSO")
+	p[ntlm.AvIDMsvAvNbComputerName] = encoder.StrToUTF16("DC01")
+	p[ntlm.AvIDMsvAvNbDomainName] = encoder.StrToUTF16("CONTOSO")
 	bytes := p.Bytes()
 	t.Logf("Bytes: %x", bytes)
 	t.Logf("Encoded successfully")

@@ -3,6 +3,8 @@ package ntlm
 import (
 	"encoding/binary"
 	"fmt"
+
+	"github.com/msultra/encoder"
 )
 
 type AvID uint16
@@ -183,15 +185,15 @@ func NewTargetInformation(pairs AvPairs) (*TargetInformation, error) {
 func (t *TargetInformation) Set(k AvID, v []byte) (err error) {
 	switch k {
 	case AvIDMsvAvNbComputerName:
-		t.NbComputerName = ToString(v)
+		t.NbComputerName = encoder.UTF16ToStr(v)
 	case AvIDMsvAvNbDomainName:
-		t.NbDomainName = ToString(v)
+		t.NbDomainName = encoder.UTF16ToStr(v)
 	case AvIDMsvAvDNSComputerName:
-		t.DNSComputerName = ToString(v)
+		t.DNSComputerName = encoder.UTF16ToStr(v)
 	case AvIDMsvAvDNSDomainName:
-		t.DNSDomainName = ToString(v)
+		t.DNSDomainName = encoder.UTF16ToStr(v)
 	case AvIDMsvAvDNSTreeName:
-		t.DNSTreeName = ToString(v)
+		t.DNSTreeName = encoder.UTF16ToStr(v)
 	case AvIDMsvAvFlags:
 		t.Flags = binary.LittleEndian.Uint32(v)
 	case AvIDMsvAvTimestamp:
@@ -199,7 +201,7 @@ func (t *TargetInformation) Set(k AvID, v []byte) (err error) {
 	case AvIDMsvAvSingleHost:
 		t.Host = NewSingleHost(v)
 	case AvIDMsvAvTargetName:
-		t.TargetName = ToString(v)
+		t.TargetName = encoder.UTF16ToStr(v)
 	case AvIDMsvChannelBindings:
 		t.ChBindings, err = NewChannelBindings(v)
 	}

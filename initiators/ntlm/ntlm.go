@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/msultra/encoder"
 	"golang.org/x/crypto/md4"
 )
 
@@ -184,21 +185,21 @@ func (n *NtlmProvider) NewNtChallengeResponse(target []byte) ([]byte, error) {
 	}
 
 	// Generate Hash Function
-	domain := ToUnicode(n.Domain)
+	domain := encoder.StrToUTF16(n.Domain)
 	if domain == nil {
 		domain = target
 	}
 
-	user := ToUnicode(strings.ToUpper(n.User))
+	user := encoder.StrToUTF16(strings.ToUpper(n.User))
 	if user == nil {
 		// Should be valid for anonymous login
 		// TODO: check if this is correct
-		user = ToUnicode("ANONYMOUS")
+		user = encoder.StrToUTF16("ANONYMOUS")
 	}
 
 	if n.Hash == nil {
 		// Use password
-		password := ToUnicode(n.Password)
+		password := encoder.StrToUTF16(n.Password)
 		m4 := md4.New()
 		_, err := m4.Write(password)
 		if err != nil {
@@ -457,7 +458,7 @@ func (n *NtlmProvider) GenerateAuthenticateMessage() ([]byte, error) {
 	offset += len(nt)
 
 	// 28-36: DomainNameFields
-	domain := ToUnicode(strings.ToUpper(n.Domain))
+	domain := encoder.StrToUTF16(strings.ToUpper(n.Domain))
 	binary.LittleEndian.PutUint16(authenticateMessage[28:30], uint16(len(domain)))
 	binary.LittleEndian.PutUint16(authenticateMessage[30:32], uint16(len(domain)))
 	binary.LittleEndian.PutUint32(authenticateMessage[32:36], uint32(offset))
@@ -465,7 +466,7 @@ func (n *NtlmProvider) GenerateAuthenticateMessage() ([]byte, error) {
 	offset += len(domain)
 
 	// 36-44: UserNameFields
-	user := ToUnicode(strings.ToUpper(n.User))
+	user := encoder.StrToUTF16(strings.ToUpper(n.User))
 	binary.LittleEndian.PutUint16(authenticateMessage[36:38], uint16(len(user)))
 	binary.LittleEndian.PutUint16(authenticateMessage[38:40], uint16(len(user)))
 	binary.LittleEndian.PutUint32(authenticateMessage[40:44], uint32(offset))
@@ -473,7 +474,7 @@ func (n *NtlmProvider) GenerateAuthenticateMessage() ([]byte, error) {
 	offset += len(user)
 
 	// 44-52: WorkstationFields
-	workstation := ToUnicode(strings.ToUpper(n.Workstation))
+	workstation := encoder.StrToUTF16(strings.ToUpper(n.Workstation))
 	binary.LittleEndian.PutUint16(authenticateMessage[44:46], uint16(len(workstation)))
 	binary.LittleEndian.PutUint16(authenticateMessage[46:48], uint16(len(workstation)))
 	binary.LittleEndian.PutUint32(authenticateMessage[48:52], uint32(offset))

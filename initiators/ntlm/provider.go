@@ -4,6 +4,8 @@ import (
 	"crypto/rc4"
 	"encoding/asn1"
 	"encoding/binary"
+
+	"github.com/msultra/encoder"
 )
 
 type NtlmProvider struct {
@@ -137,7 +139,7 @@ func (n *NtlmProvider) InitSecContext() ([]byte, error) {
 	expectedLen := 40
 	toAppend := []byte{}
 	if n.Domain != "" {
-		uniStr := ToUnicode(n.Domain)
+		uniStr := encoder.StrToUTF16(n.Domain)
 		toAppend = append(toAppend, uniStr...)
 
 		binary.LittleEndian.PutUint16(payload[16:18], uint16(len(uniStr)))
@@ -148,7 +150,7 @@ func (n *NtlmProvider) InitSecContext() ([]byte, error) {
 
 	// 24-32: WorkstationFields
 	if n.Workstation != "" {
-		uniStr := ToUnicode(n.Workstation)
+		uniStr := encoder.StrToUTF16(n.Workstation)
 		toAppend = append(toAppend, uniStr...)
 
 		binary.LittleEndian.PutUint16(payload[24:26], uint16(len(uniStr)))

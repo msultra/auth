@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/msultra/encoder"
 	"github.com/msultra/spnego/initiators/ntlm"
 )
 
@@ -42,8 +43,8 @@ func TestAcceptSecContext(t *testing.T) {
 		t.Fatalf("ValidateChallengeMessage() failed: %v", err)
 	}
 
-	t.Logf("TargetName: %s", ntlm.ToString(provider.TargetName))
-	if ntlm.ToString(provider.TargetName) != "LAB" {
+	t.Logf("TargetName: %s", encoder.UTF16ToStr(provider.TargetName))
+	if encoder.UTF16ToStr(provider.TargetName) != "LAB" {
 		t.Fatalf("TargetName is incorrect")
 	}
 

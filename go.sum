@@ -1,2 +1,4 @@
+github.com/msultra/encoder v0.0.0-20241118082420-d293479b0da1 h1:xy8BQwqy39fEOqtv8KeSYDqG0YKf2uvy/8fhgRIIWFk=
+github.com/msultra/encoder v0.0.0-20241118082420-d293479b0da1/go.mod h1:AmGYhk6CT5avDzHdjJ1of1gRxrr0Abnfs0HbQQ6ToZQ=
 golang.org/x/crypto v0.29.0 h1:L5SG1JTTXupVV3n6sUqMTeWbjAyfPwoda2DLX8J8FrQ=
 golang.org/x/crypto v0.29.0/go.mod h1:+F4F4N5hv6v38hfeYwTdx20oUvLLc+QfrE9Ax9HtgRg=
