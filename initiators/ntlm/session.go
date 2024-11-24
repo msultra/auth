@@ -150,12 +150,12 @@ func (n *NtlmProvider) UnsealMessage(msg []byte) ([]byte, uint32, error) {
 	return ret, n.SequenceNumber, nil
 }
 
-func (n *NtlmProvider) NewLMChallengeResponse() []byte {
+func (n *NtlmProvider) NewLMChallengeResponse() ([]byte, error) {
 	//        LMv2Response
 	//  0-16: Response
 	// 16-24: ChallengeFromClient
 	// Empty LMv2ChallengeResponse => unsupported
-	return make([]byte, 24)
+	return make([]byte, 24), nil
 }
 
 func (n *NtlmProvider) NewNtChallengeResponse(target []byte) ([]byte, error) {

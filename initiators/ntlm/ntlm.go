@@ -6,7 +6,6 @@ import (
 	"crypto/md5"
 	"crypto/rc4"
 	"encoding/asn1"
-	"encoding/binary"
 	"errors"
 	"strings"
 
@@ -191,6 +190,21 @@ func (n *NtlmProvider) ValidateChallengeMessage(sc []byte) (err error) {
 	return err
 }
 
+type AuthenicateMessage struct {
+	Signature                      [8]byte
+	MessageType                    uint32
+	LmChallengeResponseFields      VarField
+	NtChallengeResponseFields      VarField
+	DomainNameFields               VarField
+	UsernameFields                 VarField
+	WorkstationFields              VarField
+	EncryptedRandomSessionKeyField VarField
+	NegotiateFlags                 uint32
+	Version                        [8]byte
+	MIC                            [16]byte
+	Payload                        []byte
+}
+
 func (n *NtlmProvider) NewAuthenticateMessage() ([]byte, error) {
 	//        AuthenticateMessage
 	//   0-8: Signature
@@ -207,82 +221,35 @@ func (n *NtlmProvider) NewAuthenticateMessage() ([]byte, error) {
 	//   88-: Payload
 	var payload []byte
 
-	offset := 88
+	lm, err := n.NewLMChallengeResponse()
+	if err != nil {
+		return nil, err
+	}
 
-	//        AuthenticateMessage
-	authenticateMessage := make([]byte, offset)
-
-	//   0-8: Signature
-	copy(authenticateMessage[0:8], Signature[:])
-
-	//  8-12: MessageType
-	binary.LittleEndian.PutUint32(authenticateMessage[8:12], MessageTypeNtLmAuthenticate)
-
-	// 12-20: LmChallengeResponseFields
-	//        0-2: len
-	//        2-4: maxlen
-	//        4-8: offset
-	lm := n.NewLMChallengeResponse()
-	binary.LittleEndian.PutUint16(authenticateMessage[12:14], uint16(len(lm)))
-	binary.LittleEndian.PutUint16(authenticateMessage[14:16], uint16(len(lm)))
-	binary.LittleEndian.PutUint32(authenticateMessage[16:20], uint32(offset))
-	payload = append(payload, lm...)
-	offset += len(lm)
-
-	// 20-28: NtChallengeResponseFields
 	nt, err := n.NewNtChallengeResponse(n.TargetName)
 	if err != nil {
 		return nil, err
 	}
-	binary.LittleEndian.PutUint16(authenticateMessage[20:22], uint16(len(nt)))
-	binary.LittleEndian.PutUint16(authenticateMessage[22:24], uint16(len(nt)))
-	binary.LittleEndian.PutUint32(authenticateMessage[24:28], uint32(offset))
-	payload = append(payload, nt...)
-	offset += len(nt)
 
-	// 28-36: DomainNameFields
-	domain := encoder.StrToUTF16(strings.ToUpper(n.Domain))
-	binary.LittleEndian.PutUint16(authenticateMessage[28:30], uint16(len(domain)))
-	binary.LittleEndian.PutUint16(authenticateMessage[30:32], uint16(len(domain)))
-	binary.LittleEndian.PutUint32(authenticateMessage[32:36], uint32(offset))
-	payload = append(payload, domain...)
-	offset += len(domain)
+	offset := 88
+	auth := AuthenicateMessage{
+		Signature:                      Signature,
+		MessageType:                    MessageTypeNtLmAuthenticate,
+		LmChallengeResponseFields:      NewVarField(&payload, lm, &offset),
+		NtChallengeResponseFields:      NewVarField(&payload, nt, &offset),
+		DomainNameFields:               NewVarField(&payload, encoder.StrToUTF16(strings.ToUpper(n.Domain)), &offset),
+		UsernameFields:                 NewVarField(&payload, encoder.StrToUTF16(strings.ToUpper(n.User)), &offset),
+		WorkstationFields:              NewVarField(&payload, encoder.StrToUTF16(strings.ToUpper(n.Workstation)), &offset),
+		EncryptedRandomSessionKeyField: NewVarField(&payload, n.RandomSessionKey, &offset),
+		NegotiateFlags:                 n.NegotiateFlags,
+		Version:                        ClientVersion,
+		MIC:                            [16]byte{},
+		Payload:                        payload,
+	}
 
-	// 36-44: UserNameFields
-	user := encoder.StrToUTF16(strings.ToUpper(n.User))
-	binary.LittleEndian.PutUint16(authenticateMessage[36:38], uint16(len(user)))
-	binary.LittleEndian.PutUint16(authenticateMessage[38:40], uint16(len(user)))
-	binary.LittleEndian.PutUint32(authenticateMessage[40:44], uint32(offset))
-	payload = append(payload, user...)
-	offset += len(user)
-
-	// 44-52: WorkstationFields
-	workstation := encoder.StrToUTF16(strings.ToUpper(n.Workstation))
-	binary.LittleEndian.PutUint16(authenticateMessage[44:46], uint16(len(workstation)))
-	binary.LittleEndian.PutUint16(authenticateMessage[46:48], uint16(len(workstation)))
-	binary.LittleEndian.PutUint32(authenticateMessage[48:52], uint32(offset))
-	payload = append(payload, workstation...)
-	offset += len(workstation)
-
-	// 52-60: EncryptedRandomSessionKeyFields
-	binary.LittleEndian.PutUint16(authenticateMessage[52:54], uint16(len(n.RandomSessionKey)))
-	binary.LittleEndian.PutUint16(authenticateMessage[54:56], uint16(len(n.RandomSessionKey)))
-	binary.LittleEndian.PutUint32(authenticateMessage[56:60], uint32(offset))
-	payload = append(payload, n.RandomSessionKey...)
-	offset += len(n.RandomSessionKey)
-
-	// 60-64: NegotiateFlags
-	binary.LittleEndian.PutUint32(authenticateMessage[60:64], uint32(n.NegotiateFlags))
-
-	// 64-72: Version
-	copy(authenticateMessage[64:72], ClientVersion[:])
-
-	// 72-88: MIC
-	// to overwrite later
-	copy(authenticateMessage[72:88], make([]byte, 16))
-
-	// 88-: Payload
-	n.AuthenticateMessage = append(authenticateMessage, payload...)
+	if n.AuthenticateMessage, err = encoder.Marshal(auth); err != nil {
+		return nil, err
+	}
 
 	hash := hmac.New(md5.New, n.ExportedSessionKey)
 	if _, err := hash.Write(n.NegotiateMessage); err != nil {
@@ -292,7 +259,7 @@ func (n *NtlmProvider) NewAuthenticateMessage() ([]byte, error) {
 	if _, err = hash.Write(n.AuthenticateMessage); err != nil {
 		return nil, err
 	}
-	copy(n.AuthenticateMessage[72:88], hash.Sum(authenticateMessage[72:88]))
+	copy(n.AuthenticateMessage[72:88], hash.Sum(nil))
 
 	// Before returning, we need to generate the session keys
 	n.ServerSigningKey, err = signKey(
