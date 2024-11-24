@@ -65,7 +65,7 @@ func sealKey(key []byte, magicConstant []byte, negotiateFlags uint32) ([]byte, e
 }
 
 func sign(dst []byte, negotiateFlags uint32, handle *rc4.Cipher, signingKey []byte, seqNum uint32, msg []byte) ([]byte, uint32) {
-	ret, tag := sliceForAppend(dst, 16)
+	ret, tag := growSlice(dst, 16)
 	if negotiateFlags&NegotiateExtendedSecurity == 0 {
 		//        NtlmsspMessageSignature
 		//   0-4: Version
@@ -118,7 +118,7 @@ func (n *NtlmProvider) VerifyMIC(mic, msg []byte, seqNum uint32) (bool, uint32) 
 }
 
 func (n *NtlmProvider) SealMessage(msg []byte) ([]byte, uint32) {
-	ret, ciphertext := sliceForAppend(nil, len(msg))
+	ret, ciphertext := growSlice(nil, len(msg))
 	switch {
 	case n.NegotiateFlags&NegotiateSeal != 0:
 		n.ClientHandle.XORKeyStream(ciphertext[16:], msg)
@@ -131,7 +131,7 @@ func (n *NtlmProvider) SealMessage(msg []byte) ([]byte, uint32) {
 }
 
 func (n *NtlmProvider) UnsealMessage(msg []byte) ([]byte, uint32, error) {
-	ret, plaintext := sliceForAppend(nil, len(msg))
+	ret, plaintext := growSlice(nil, len(msg))
 	switch {
 	case n.NegotiateFlags&NegotiateSeal != 0:
 		n.ServerHandle.XORKeyStream(plaintext[16:], msg)

@@ -15,10 +15,10 @@ import (
 
 var (
 	NtlmOID   = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 2, 10}
-	Signature = []byte("NTLMSSP\x00")
+	Signature = [8]byte{0x4E, 0x54, 0x4C, 0x4D, 0x53, 0x53, 0x50, 0x00} // "NTLMSSP\x00"
 )
 
-var ClientVersion = []byte{
+var ClientVersion = [8]byte{
 	0: 0x0a, // Windows Major Version
 	1: 0x00, // Windows Minor Version
 	7: 0x0f, // Build Number
@@ -67,7 +67,17 @@ const (
 	MessageTypeNtLmAuthenticate = 0x00000003
 )
 
-func (n *NtlmProvider) NewNegotiateMessage() ([]byte, error) {
+type NegotiateMessage struct {
+	Signature         [8]byte
+	MessageType       uint32
+	NegotiateFlags    uint32
+	DomainNameFields  VarField
+	WorkstationFields VarField
+	Version           [8]byte
+	Payload           []byte
+}
+
+func (n *NtlmProvider) NewNegotiateMessage() (msg []byte, err error) {
 	//        NegotiateMessage
 	//   0-8: Signature
 	//  8-12: MessageType
@@ -80,57 +90,33 @@ func (n *NtlmProvider) NewNegotiateMessage() ([]byte, error) {
 		n.NegotiateFlags = DefaultNegotiateFlags
 	}
 
-	// NegotiateMessage
-	payload := make([]byte, 40)
-
-	// 0-8: Signature
-	copy(payload, Signature)
-
-	// 8-12: MessageType
-	binary.LittleEndian.PutUint32(payload[8:12], MessageTypeNtLmNegotiate)
-
-	// 12-16: NegotiateFlags
+	offset := 40
+	var payload []byte
+	var domainFields, workstationFields VarField
 	if n.IsOEM {
 		n.NegotiateFlags |= NegotiateOEM
 		if n.Domain != "" {
 			n.NegotiateFlags |= NegotiateOEMDomainSupplied
+			uniStr := encoder.StrToUTF16(n.Domain)
+			domainFields = NewVarField(&payload, uniStr, &offset)
 		}
 		if n.Workstation != "" {
 			n.NegotiateFlags |= NegotiateOEMWorkstationSupplied
+			uniStr := encoder.StrToUTF16(n.Workstation)
+			workstationFields = NewVarField(&payload, uniStr, &offset)
 		}
 	}
-	binary.LittleEndian.PutUint32(payload[12:16], uint32(n.NegotiateFlags))
 
-	// 16-24: DomainNameFields
-	expectedLen := 40
-	toAppend := []byte{}
-	if n.Domain != "" && n.IsOEM {
-		uniStr := encoder.StrToUTF16(n.Domain)
-		toAppend = append(toAppend, uniStr...)
-
-		binary.LittleEndian.PutUint16(payload[16:18], uint16(len(uniStr)))
-		binary.LittleEndian.PutUint16(payload[18:20], uint16(len(uniStr)))
-		binary.LittleEndian.PutUint32(payload[20:24], uint32(expectedLen))
-		expectedLen += len(uniStr)
-	}
-
-	// 24-32: WorkstationFields
-	if n.Workstation != "" && n.IsOEM {
-		uniStr := encoder.StrToUTF16(n.Workstation)
-		toAppend = append(toAppend, uniStr...)
-
-		binary.LittleEndian.PutUint16(payload[24:26], uint16(len(uniStr)))
-		binary.LittleEndian.PutUint16(payload[26:28], uint16(len(uniStr)))
-		binary.LittleEndian.PutUint32(payload[28:32], uint32(expectedLen))
-		expectedLen += len(uniStr)
-	}
-
-	// 32-40: Version
-	copy(payload[32:], ClientVersion)
-
-	// 40-: Payload
-	n.NegotiateMessage = append(payload, toAppend...)
-	return n.NegotiateMessage, nil
+	n.NegotiateMessage, err = encoder.Marshal(NegotiateMessage{
+		Signature:         Signature,
+		MessageType:       MessageTypeNtLmNegotiate,
+		NegotiateFlags:    n.NegotiateFlags,
+		DomainNameFields:  domainFields,
+		WorkstationFields: workstationFields,
+		Version:           ClientVersion,
+		Payload:           payload,
+	})
+	return n.NegotiateMessage, err
 }
 
 func (n *NtlmProvider) ValidateChallengeMessage(sc []byte) (err error) {
@@ -153,7 +139,7 @@ func (n *NtlmProvider) ValidateChallengeMessage(sc []byte) (err error) {
 	//        Note that sc is the ChallengeMessage
 
 	//   0-8: Signature
-	if !bytes.Equal(sc[:8], Signature) {
+	if !bytes.Equal(sc[:8], Signature[:]) {
 		return errors.New("invalid signature")
 	}
 
@@ -220,7 +206,7 @@ func (n *NtlmProvider) NewAuthenticateMessage() ([]byte, error) {
 	authenticateMessage := make([]byte, offset)
 
 	//   0-8: Signature
-	copy(authenticateMessage[0:8], Signature)
+	copy(authenticateMessage[0:8], Signature[:])
 
 	//  8-12: MessageType
 	binary.LittleEndian.PutUint32(authenticateMessage[8:12], MessageTypeNtLmAuthenticate)
@@ -282,7 +268,7 @@ func (n *NtlmProvider) NewAuthenticateMessage() ([]byte, error) {
 	binary.LittleEndian.PutUint32(authenticateMessage[60:64], uint32(n.NegotiateFlags))
 
 	// 64-72: Version
-	copy(authenticateMessage[64:72], ClientVersion)
+	copy(authenticateMessage[64:72], ClientVersion[:])
 
 	// 72-88: MIC
 	// to overwrite later
