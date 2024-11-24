@@ -27,6 +27,10 @@ type NtlmProvider struct {
 	// Workstation (workstation for authentication)
 	Workstation string
 
+	// IsOEM (indicates if the NTLM is OEM)
+	// Don't touch unless you know what you're doing
+	IsOEM bool
+
 	// TargetName (target name)
 	// Don't touch unless you know what you're doing
 	TargetName []byte
@@ -107,13 +111,8 @@ func (n *NtlmProvider) InitSecContext() ([]byte, error) {
 	// 24-32: WorkstationFields
 	// 32-40: Version
 	//   40-: Payload
-	var flags uint32
 	if n.NegotiateFlags == 0 {
-		flags = Negotiate56 | Negotiate128 | NegotiateKeyExch | NegotiateTargetInfo |
-			NegotiateExtendedSecurity | NegotiateAlwaysSign | NegotiateNTLM | NegotiateSign |
-			RequestTarget | NegotiateUnicode | NegotiateVersion
-	} else {
-		flags = n.NegotiateFlags
+		n.NegotiateFlags = DefaultNegotiateFlags
 	}
 
 	// NegotiateMessage
@@ -126,19 +125,21 @@ func (n *NtlmProvider) InitSecContext() ([]byte, error) {
 	binary.LittleEndian.PutUint32(payload[8:12], MessageTypeNtLmNegotiate)
 
 	// 12-16: NegotiateFlags
-	if n.Domain != "" {
-		flags |= NegotiateDomainSupplied
+	if n.IsOEM {
+		n.NegotiateFlags |= NegotiateOEM
+		if n.Domain != "" {
+			n.NegotiateFlags |= NegotiateOEMDomainSupplied
+		}
+		if n.Workstation != "" {
+			n.NegotiateFlags |= NegotiateOEMWorkstationSupplied
+		}
 	}
-	if n.Workstation != "" {
-		flags |= NegotiateWorkstationSupplied
-	}
-	n.NegotiateFlags = flags
-	binary.LittleEndian.PutUint32(payload[12:16], uint32(flags))
+	binary.LittleEndian.PutUint32(payload[12:16], uint32(n.NegotiateFlags))
 
 	// 16-24: DomainNameFields
 	expectedLen := 40
 	toAppend := []byte{}
-	if n.Domain != "" {
+	if n.Domain != "" && n.IsOEM {
 		uniStr := encoder.StrToUTF16(n.Domain)
 		toAppend = append(toAppend, uniStr...)
 
@@ -149,7 +150,7 @@ func (n *NtlmProvider) InitSecContext() ([]byte, error) {
 	}
 
 	// 24-32: WorkstationFields
-	if n.Workstation != "" {
+	if n.Workstation != "" && n.IsOEM {
 		uniStr := encoder.StrToUTF16(n.Workstation)
 		toAppend = append(toAppend, uniStr...)
 

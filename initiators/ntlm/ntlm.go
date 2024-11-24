@@ -28,6 +28,8 @@ var ClientVersion = []byte{
 	7: 0x0f, // Build Number
 }
 
+const DefaultNegotiateFlags = Negotiate56 | Negotiate128 | NegotiateKeyExch | NegotiateTargetInfo | NegotiateExtendedSecurity | NegotiateAlwaysSign | NegotiateNTLM | NegotiateSign | RequestTarget | NegotiateUnicode | NegotiateVersion
+
 const (
 	NegotiateUnicode = 1 << iota
 	NegotiateOEM
@@ -41,8 +43,8 @@ const (
 	NegotiateNTLM
 	_ // Reserved
 	NegotiateAnonymous
-	NegotiateDomainSupplied
-	NegotiateWorkstationSupplied
+	NegotiateOEMDomainSupplied
+	NegotiateOEMWorkstationSupplied
 	_ // Reserved
 	NegotiateAlwaysSign
 	TargetTypeDomain
