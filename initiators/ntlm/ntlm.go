@@ -67,6 +67,72 @@ const (
 	MessageTypeNtLmAuthenticate = 0x00000003
 )
 
+func (n *NtlmProvider) NewNegotiateMessage() ([]byte, error) {
+	//        NegotiateMessage
+	//   0-8: Signature
+	//  8-12: MessageType
+	// 12-16: NegotiateFlags
+	// 16-24: DomainNameFields
+	// 24-32: WorkstationFields
+	// 32-40: Version
+	//   40-: Payload
+	if n.NegotiateFlags == 0 {
+		n.NegotiateFlags = DefaultNegotiateFlags
+	}
+
+	// NegotiateMessage
+	payload := make([]byte, 40)
+
+	// 0-8: Signature
+	copy(payload, Signature)
+
+	// 8-12: MessageType
+	binary.LittleEndian.PutUint32(payload[8:12], MessageTypeNtLmNegotiate)
+
+	// 12-16: NegotiateFlags
+	if n.IsOEM {
+		n.NegotiateFlags |= NegotiateOEM
+		if n.Domain != "" {
+			n.NegotiateFlags |= NegotiateOEMDomainSupplied
+		}
+		if n.Workstation != "" {
+			n.NegotiateFlags |= NegotiateOEMWorkstationSupplied
+		}
+	}
+	binary.LittleEndian.PutUint32(payload[12:16], uint32(n.NegotiateFlags))
+
+	// 16-24: DomainNameFields
+	expectedLen := 40
+	toAppend := []byte{}
+	if n.Domain != "" && n.IsOEM {
+		uniStr := encoder.StrToUTF16(n.Domain)
+		toAppend = append(toAppend, uniStr...)
+
+		binary.LittleEndian.PutUint16(payload[16:18], uint16(len(uniStr)))
+		binary.LittleEndian.PutUint16(payload[18:20], uint16(len(uniStr)))
+		binary.LittleEndian.PutUint32(payload[20:24], uint32(expectedLen))
+		expectedLen += len(uniStr)
+	}
+
+	// 24-32: WorkstationFields
+	if n.Workstation != "" && n.IsOEM {
+		uniStr := encoder.StrToUTF16(n.Workstation)
+		toAppend = append(toAppend, uniStr...)
+
+		binary.LittleEndian.PutUint16(payload[24:26], uint16(len(uniStr)))
+		binary.LittleEndian.PutUint16(payload[26:28], uint16(len(uniStr)))
+		binary.LittleEndian.PutUint32(payload[28:32], uint32(expectedLen))
+		expectedLen += len(uniStr)
+	}
+
+	// 32-40: Version
+	copy(payload[32:], ClientVersion)
+
+	// 40-: Payload
+	n.NegotiateMessage = append(payload, toAppend...)
+	return n.NegotiateMessage, nil
+}
+
 func (n *NtlmProvider) ValidateChallengeMessage(sc []byte) (err error) {
 	//        ChallengeMessage
 	//   0-8: Signature
