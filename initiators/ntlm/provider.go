@@ -108,7 +108,7 @@ func (n *NtlmProvider) AcceptSecContext(sc []byte) ([]byte, error) {
 	if err := n.ValidateChallengeMessage(sc); err != nil {
 		return nil, err
 	}
-	return n.GenerateAuthenticateMessage()
+	return n.NewAuthenticateMessage()
 }
 
 // GetMIC generates a Message Integrity Code for the given bytes

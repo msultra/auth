@@ -198,7 +198,7 @@ func (n *NtlmProvider) ValidateChallengeMessage(sc []byte) (err error) {
 	return nil
 }
 
-func (n *NtlmProvider) GenerateAuthenticateMessage() ([]byte, error) {
+func (n *NtlmProvider) NewAuthenticateMessage() ([]byte, error) {
 	//        AuthenticateMessage
 	//   0-8: Signature
 	//  8-12: MessageType
