@@ -1,7 +1,6 @@
 package ntlm
 
 import (
-	"encoding/binary"
 	"errors"
 )
 
@@ -15,10 +14,12 @@ func (v *VarField) Extract(baseOffset int, payload []byte) (data []byte, err err
 	if baseOffset > int(v.Offset) {
 		return []byte{}, nil
 	}
-	if v.Offset+uint32(v.Length) > uint32(len(payload)) {
+
+	start := int(v.Offset) - baseOffset
+	if start+int(v.Length) > len(payload) {
 		return nil, errors.New("invalid offset")
 	}
-	return payload[v.Offset-uint32(baseOffset) : v.Offset-uint32(baseOffset)+uint32(v.Length)], nil
+	return payload[start : start+int(v.Length)], nil
 }
 
 func NewVarField(dst *[]byte, src []byte, offset *int) VarField {
@@ -34,19 +35,6 @@ func NewVarField(dst *[]byte, src []byte, offset *int) VarField {
 
 	*offset += int(f.Length)
 	return f
-}
-
-func extractFields(field []byte, full []byte) (data []byte, err error) {
-	length := binary.LittleEndian.Uint16(field[0:2])
-	maxlen := binary.LittleEndian.Uint16(field[2:4])
-	offset := binary.LittleEndian.Uint16(field[4:8])
-	if offset+length > uint16(len(full)) {
-		return nil, errors.New("invalid offset")
-	}
-	if maxlen < length {
-		return nil, errors.New("invalid length")
-	}
-	return full[offset : offset+length], nil
 }
 
 func growSlice(in []byte, n int) (head, tail []byte) {

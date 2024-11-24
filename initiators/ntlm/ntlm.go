@@ -119,6 +119,18 @@ func (n *NtlmProvider) NewNegotiateMessage() (msg []byte, err error) {
 	return n.NegotiateMessage, err
 }
 
+type ChallengeMessage struct {
+	Signature         [8]byte
+	MessageType       uint32
+	TargetName        VarField
+	NegotiateFlags    uint32
+	ServerChallenge   [8]byte
+	Reserved          [8]byte
+	TargetInformation VarField
+	Version           [8]byte
+	Payload           []byte
+}
+
 func (n *NtlmProvider) ValidateChallengeMessage(sc []byte) (err error) {
 	//        ChallengeMessage
 	//   0-8: Signature
@@ -130,42 +142,42 @@ func (n *NtlmProvider) ValidateChallengeMessage(sc []byte) (err error) {
 	// 40-48: TargetInfoFields
 	// 48-56: Version
 	//   56-: Payload
-
-	if len(sc) < 48 {
+	if len(sc) < 56 {
 		return errors.New("invalid challenge message length")
 	}
 
-	//        ChallengeMessage
-	//        Note that sc is the ChallengeMessage
+	var challenge ChallengeMessage
+	if err := encoder.Unmarshal(sc, &challenge); err != nil {
+		return err
+	}
 
 	//   0-8: Signature
-	if !bytes.Equal(sc[:8], Signature[:]) {
+	if !bytes.Equal(challenge.Signature[:], Signature[:]) {
 		return errors.New("invalid signature")
 	}
 
 	//  8-12: MessageType
-	if binary.LittleEndian.Uint32(sc[8:12]) != MessageTypeNtLmChallenge {
+	if challenge.MessageType != MessageTypeNtLmChallenge {
 		return errors.New("invalid message type")
 	}
 
 	// 12-20: TargetNameFields
-	if n.TargetName, err = extractFields(sc[12:20], sc); err != nil {
+	if n.TargetName, err = challenge.TargetName.Extract(56, challenge.Payload); err != nil {
 		return err
 	}
 
 	// 20-24: NegotiateFlags
-	challengeFlags := binary.LittleEndian.Uint32(sc[20:24])
-	if challengeFlags&RequestTarget == 0 || challengeFlags&NegotiateTargetInfo == 0 {
+	if challenge.NegotiateFlags&RequestTarget == 0 || challenge.NegotiateFlags&NegotiateTargetInfo == 0 {
 		return errors.New("invalid negotiate flags")
 	}
 
 	// 24-32: ServerChallenge
-	n.ServerChallenge = sc[24:32]
+	copy(n.ServerChallenge[:], challenge.ServerChallenge[:])
 
-	// 32-40: _
+	// 32-40: _ (reserved)
 
 	// 40-48: TargetInfoFields
-	targetInfo, err := extractFields(sc[40:48], sc)
+	targetInfo, err := challenge.TargetInformation.Extract(56, challenge.Payload)
 	if err != nil {
 		return err
 	}
@@ -175,13 +187,8 @@ func (n *NtlmProvider) ValidateChallengeMessage(sc []byte) (err error) {
 		return err
 	}
 
-	if n.TargetInfo, err = NewTargetInformation(avpairs); err != nil {
-		return err
-	}
-
-	// 48-56: Version
-	// version := sc[48:56]
-	return nil
+	n.TargetInfo, err = NewTargetInformation(avpairs)
+	return err
 }
 
 func (n *NtlmProvider) NewAuthenticateMessage() ([]byte, error) {
